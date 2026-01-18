@@ -1,5 +1,5 @@
 import os
-import fitz  # PyMuPDF
+import fitz
 import pdfplumber
 import pandas as pd
 from pdf2docx import Converter
@@ -26,10 +26,10 @@ class PDFExtractor:
         if os.path.exists(self.tesseract_cmd):
             pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
             self.has_ocr = True
-            print("👁️ Motor de Visión Tesseract listo.")
+            print("Motor de Visión Tesseract listo.")
         else:
             self.has_ocr = False
-            print(f"⚠️ Tesseract no encontrado.")
+            print(f"Tesseract no encontrado, esta instalado?")
 
         # Configuración GMFT
         try:
@@ -52,7 +52,6 @@ class PDFExtractor:
                 # Revisamos hasta 3 páginas
                 for i in range(min(len(doc), 3)):
                     text = doc[i].get_text()
-                    # Si encontramos más de 50 caracteres, asumimos que es nativo
                     if len(text.strip()) > 50:
                         return True
             return False
@@ -60,103 +59,136 @@ class PDFExtractor:
             return False
 
     def extract_tables(self):
-        """ (Este método ya funciona bien, lo dejamos igual) """
+        """
+        Lógica Inteligente Corregida:
+        - Si es Digital -> Prioridad: Nativo > IA
+        - Si es Imagen  -> Prioridad: IA > OCR
+        """
         excel_path = os.path.join(self.output_dir, f"{self.filename}_tablas.xlsx")
         tables_found = []
+        
+        es_digital = self._has_text_content()
 
-        # 1. IA (GMFT)
-        if self.usar_ia:
-            print("📊 Estrategia 1: Probando IA (GMFT)...")
-            try:
-                doc = PyPDFium2Document(self.file_path)
-                for table in doc.tables():
-                    try:
-                        df = self.formatter.extract(table)
-                        if not df.empty and len(df) > 1:
-                            df = df.map(lambda x: self._clean_text(str(x)) if x is not None else x)
-                            tables_found.append((f"P{table.page.page_number+1}_IA", df))
-                    except: pass
-                doc.close()
-            except Exception as e: print(f"   ⚠️ Falló GMFT: {e}")
+        # --- CAMINO A: PDF DIGITAL (Prioridad Nativa) ---
+        if es_digital:
+            print("PDF Digital detectado. Usando extracción Nativa (Alta Precisión)...")
+            tables_found = self._extract_native_fallback()
+            
+            # Si el método nativo falló (ej: tablas sin bordes), intentamos el salvavidas de IA
+            if not tables_found and self.usar_ia:
+                print("Nativo no encontró tablas. Intentando con IA (GMFT)...")
+                tables_found = self._extract_with_ai()
 
-        # 2. OCR (Tesseract)
-        if not tables_found and self.has_ocr:
-            print("👁️ Estrategia 2: Activando Visión Artificial (OCR)...")
-            ocr_tables = self._extract_with_vision_fallback()
-            tables_found.extend(ocr_tables)
+        # --- CAMINO B: PDF ESCANEADO (Prioridad IA/OCR) ---
+        else:
+            print("PDF Escaneado/Imagen detectado.")
+            if self.usar_ia:
+                print("Intentando IA (GMFT)...")
+                tables_found = self._extract_with_ai()
+            
+            if not tables_found and self.has_ocr:
+                print("IA falló. Usando Fuerza Bruta (OCR)...")
+                tables_found = self._extract_with_vision_fallback()
 
-        # 3. Nativa
-        if not tables_found:
-            print("📄 Estrategia 3: Activando método nativo...")
-            native_tables = self._extract_native_fallback()
-            tables_found.extend(native_tables)
-
+        # --- GUARDADO ---
         if tables_found:
             with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
                 for sheet_name, df in tables_found:
                     counter = 1
                     base = sheet_name
+                    # Evitar duplicados de nombre de hoja
                     while sheet_name in writer.book.sheetnames:
                         sheet_name = f"{base}_{counter}"
                         counter += 1
                     df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
-            print(f"✅ Excel generado con {len(tables_found)} tablas.")
+            print(f"Excel generado con {len(tables_found)} tablas.")
             return excel_path
-        return None
+        else:
+            print("No se pudo extraer ninguna tabla.")
+            return None
 
-    def extract_text_doc_smart(self):
-        """
-        Genera Word. 
-        - Si es digital -> Usa pdf2docx (Mantiene formato).
-        - Si es imagen -> Usa OCR (Extrae texto plano editable).
-        """
-        print("📝 Generando documento Word...")
-        docx_path = os.path.join(self.output_dir, f"{self.filename}_edit.docx")
-        
-        # Paso 1: Detectar si es nativo o imagen
-        es_nativo = self._has_text_content()
+    def _extract_with_ai(self):
+        """Extrae usando GMFT"""
+        found = []
+        try:
+            doc = PyPDFium2Document(self.file_path)
+            for table in doc.tables():
+                try:
+                    df = self.formatter.extract(table)
+                    if not df.empty and len(df) > 1:
+                        df = df.map(lambda x: self._clean_text(str(x)) if x is not None else x)
+                        found.append((f"P{table.page.page_number+1}_IA", df))
+                except: pass
+            doc.close()
+        except Exception as e: 
+            print(f"Error usando libreria GMFT: {e}")
+        return found
 
-        if es_nativo:
-            print("   -> PDF Digital detectado. Usando conversión de alta fidelidad.")
+    def _extract_native_fallback(self):
+            tables = []
             try:
-                cv = Converter(self.file_path)
-                cv.convert(docx_path, start=0, end=None)
-                cv.close()
-                return docx_path
-            except Exception as e:
-                print(f"   ⚠️ Falló pdf2docx: {e}. Intentando OCR...")
-        
-        # Paso 2: Si no es nativo (o falló el anterior), usar OCR Fuerza Bruta
-        if self.has_ocr:
-            print("   -> PDF Escaneado detectado. Usando OCR para texto editable...")
-            doc = Document()
-            doc.add_heading(f'Texto Extraído (OCR) - {self.filename}', 0)
+                with pdfplumber.open(self.file_path) as pdf:
+                    for i, page in enumerate(pdf.pages):
+                        
+                        # --- INTENTO 1: ESTRATEGIA DE LÍNEAS (Para tablas bien dibujadas) ---
+                        extracted = page.extract_tables(table_settings={
+                            "vertical_strategy": "lines", 
+                            "horizontal_strategy": "lines",
+                            "snap_tolerance": 3
+                        })
 
-            with fitz.open(self.file_path) as pdf:
-                for i, page in enumerate(pdf):
-                    print(f"      Procesando pág {i+1}...")
-                    # Convertir página a imagen
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                    img_data = pix.tobytes("png")
-                    image = Image.open(io.BytesIO(img_data))
-                    
-                    # Extraer texto con Tesseract
-                    texto = pytesseract.image_to_string(image, lang='spa')
-                    
-                    # Escribir en Word
-                    doc.add_heading(f'Página {i+1}', level=1)
-                    doc.add_paragraph(texto)
-                    # Añadir salto de página
-                    if i < len(pdf) - 1:
-                        doc.add_page_break()
-            
-            doc.save(docx_path)
-            return docx_path
-        
-        return None
+                        # Validamos: Si no encontró nada O si encontró tablas pero de 1 sola columna
+                        usar_estrategia_texto = False
+                        if not extracted:
+                            usar_estrategia_texto = True
+                        else:
+                            # Si la tabla detectada tiene menos de 2 columnas, probablemente es un falso positivo
+                            if len(extracted[0][0]) < 2:
+                                usar_estrategia_texto = True
+
+                        # --- INTENTO 2: ESTRATEGIA DE TEXTO (Para tablas sin bordes) ---
+                        if usar_estrategia_texto:
+                            print(f" Pág {i+1}: Líneas no detectadas, buscando por espacios en blanco...")
+                            extracted = page.extract_tables(table_settings={
+                                "vertical_strategy": "text", 
+                                "horizontal_strategy": "text",
+                                "snap_tolerance": 3,
+                                "intersection_x_tolerance": 15 # Tolerancia para alinear columnas chuecas
+                            })
+
+                        # Procesar lo que haya encontrado (sea por líneas o por texto)
+                        for idx, t in enumerate(extracted):
+                            if t and len(t) > 1: # Debe tener más de 1 fila para ser útil
+                                
+                                # Limpieza de Nulos
+                                headers = t[0]
+                                data = t[1:]
+                                
+                                # Crear nombres de columnas seguros
+                                safe_headers = []
+                                for k, col in enumerate(headers):
+                                    col_str = str(col).strip() if col else ""
+                                    # Si la columna no tiene nombre, le ponemos Col_X
+                                    if not col_str:
+                                        col_str = f"Col_{k+1}"
+                                    # Si el nombre está repetido, le agregamos sufijo
+                                    if col_str in safe_headers:
+                                        col_str = f"{col_str}_{k+1}"
+                                    safe_headers.append(col_str)
+
+                                df = pd.DataFrame(data, columns=safe_headers)
+                                
+                                # Filtro final: Si el dataframe está casi vacío, lo ignoramos
+                                if not df.dropna(how='all').empty:
+                                    tables.append((f"P{i+1}_Nativa_{idx+1}", df))
+                                    
+            except Exception as e:
+                print(f"   ⚠️ Error en extracción nativa: {e}")
+                
+            return tables
+
 
     def _extract_with_vision_fallback(self):
-        """(Tu método de OCR para tablas, se mantiene igual)"""
         found_tables = []
         try:
             with fitz.open(self.file_path) as doc:
@@ -166,7 +198,6 @@ class PDFExtractor:
                     img_data = pix.tobytes("png")
                     image = Image.open(io.BytesIO(img_data))
 
-                    # data frame OCR
                     data = pytesseract.image_to_data(image, lang='spa', output_type=pytesseract.Output.DATAFRAME)
                     data = data[data.conf > 30] 
                     data = data[data.text.notna()]
@@ -185,27 +216,45 @@ class PDFExtractor:
                             normalized_rows = [r + [''] * (max_cols - len(r)) for r in rows]
                             df = pd.DataFrame(normalized_rows)
                             found_tables.append((f"P{i+1}_OCR", df))
-                            print(f"      ✨ Tabla OCR detectada en Pág {i+1}")
         except: pass
         return found_tables
 
-    def _extract_native_fallback(self):
-        """(Tu método nativo, se mantiene igual)"""                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             #By Vctor Noguera at VHNGROUP
-        tables = []
-        try:
-            with pdfplumber.open(self.file_path) as pdf:
-                for i, page in enumerate(pdf.pages):
-                    extracted = page.extract_tables()
-                    for t in extracted:
-                        if t:
-                            df = pd.DataFrame(t[1:], columns=t[0])
-                            tables.append((f"P{i+1}_Nativa", df))
-        except: pass
-        return tables
+    def extract_text_doc_smart(self):
+        print("Generando documento Word...")
+        docx_path = os.path.join(self.output_dir, f"{self.filename}_edit.docx")
+        
+        es_nativo = self._has_text_content()
+
+        if es_nativo:
+            print("PDF Digital detectado. Usando conversión de alta fidelidad.")
+            try:
+                cv = Converter(self.file_path)
+                cv.convert(docx_path, start=0, end=None)
+                cv.close()
+                return docx_path
+            except Exception as e:
+                print(f"Falló pdf2docx: {e}. Intentando OCR...")
+        
+        if self.has_ocr:
+            print("PDF Escaneado detectado. Usando OCR")
+            doc = Document()
+            doc.add_heading(f'Texto Extraído (OCR) - {self.filename}', 0)
+            try:
+                with fitz.open(self.file_path) as pdf:
+                    for i, page in enumerate(pdf):
+                        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                        image = Image.open(io.BytesIO(pix.tobytes("png")))
+                        texto = pytesseract.image_to_string(image, lang='spa')
+                        doc.add_heading(f'Página {i+1}', level=1)
+                        doc.add_paragraph(texto)
+                        if i < len(pdf) - 1: doc.add_page_break()
+                doc.save(docx_path)
+                return docx_path
+            except: pass
+        return None
 
     def extract_images(self):
-        """(Tu método de imágenes, se mantiene igual)"""
-        print("🖼️ Extrayendo imágenes...")
+        print("Extrayendo imágenes...")
         img_count = 0
         images_dir = os.path.join(self.output_dir, "imagenes")
         os.makedirs(images_dir, exist_ok=True)
