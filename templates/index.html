@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extractor de Datos PDF</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body class="bg-slate-100 min-h-screen flex items-center justify-center font-sans">
+
+    <div class="bg-white p-10 rounded-2xl shadow-2xl w-full max-w-lg transition-all duration-300" id="mainCard">
+
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-extrabold text-slate-800 flex justify-center items-center gap-2">
+                <i data-lucide="file-text" class="w-8 h-8 text-blue-600"></i>
+                PDF Data Extractor
+            </h1>
+            <p class="text-slate-500 mt-2 text-sm">Convierte tablas y texto a formatos editables.</p>
+        </div>
+
+        <div id="uploadStep" class="transition-opacity duration-300">
+            <form id="uploadForm" class="space-y-6">
+
+                <div class="group relative">
+                    <input type="file" id="fileInput" name="file" accept=".pdf"
+                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        onchange="handleFileSelect()">
+
+                    <div id="dropZone"
+                        class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center group-hover:border-blue-500 group-hover:bg-blue-50 transition-all duration-300">
+                        <div id="iconContainer" class="mb-3 text-slate-400 group-hover:text-blue-500 transition-colors">
+                            <i data-lucide="upload-cloud" class="w-12 h-12 mx-auto"></i>
+                        </div>
+                        <p id="dropText" class="text-slate-600 font-medium">Arrastra tu PDF aquí o haz clic</p>
+                        <p class="text-xs text-slate-400 mt-1">Solo archivos .pdf</p>
+                    </div>
+                </div>
+
+                <div id="fileInfo"
+                    class="hidden bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center justify-between">
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <i data-lucide="file" class="text-blue-600 w-5 h-5 flex-shrink-0"></i>
+                        <span id="fileName" class="text-sm text-blue-800 font-semibold truncate">archivo.pdf</span>
+                    </div>
+                    <button type="button" onclick="resetFile()" class="text-slate-400 hover:text-red-500 transition">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <button type="submit" id="submitBtn" disabled
+                    class="w-full bg-slate-300 text-slate-500 py-3.5 rounded-lg font-bold shadow-sm cursor-not-allowed transition-all duration-300 flex justify-center items-center gap-2">
+                    Procesar Documento
+                </button>
+            </form>
+        </div>
+
+        <div id="loadingStep" class="hidden text-center py-10">
+            <div class="relative w-20 h-20 mx-auto mb-6">
+                <div class="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
+                <div class="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin">
+                </div>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800">Analizando Documento...</h3>
+            <p class="text-slate-500 text-sm mt-2" id="loadingText">Extrayendo tablas y estructura inteligente</p>
+        </div>
+
+        <div id="successStep" class="hidden text-center py-6">
+            <div
+                class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                <i data-lucide="check" class="w-10 h-10 text-green-600"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-slate-800">¡Proceso Terminado!</h3>
+            <p class="text-slate-500 mt-2 mb-8">Tu archivo ZIP se ha descargado automáticamente.</p>
+
+            <button onclick="location.reload()"
+                class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition shadow-lg flex items-center justify-center gap-2 font-semibold">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                Procesar otro archivo
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Inicializar iconos
+        lucide.createIcons();
+
+        const fileInput = document.getElementById('fileInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const dropZone = document.getElementById('dropZone');
+        const dropText = document.getElementById('dropText');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const uploadStep = document.getElementById('uploadStep');
+        const loadingStep = document.getElementById('loadingStep');
+        const successStep = document.getElementById('successStep');
+
+        // 1. Manejar selección de archivo
+        function handleFileSelect() {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+
+                // Actualizar UI visual
+                fileName.textContent = file.name;
+                fileInfo.classList.remove('hidden');
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+                dropText.textContent = "Archivo listo para procesar";
+
+                // Habilitar botón
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('bg-slate-300', 'text-slate-500', 'cursor-not-allowed');
+                submitBtn.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700', 'hover:shadow-lg');
+                submitBtn.innerHTML = `Comenzar Extracción <i data-lucide="arrow-right" class="w-4 h-4"></i>`;
+                lucide.createIcons(); // Re-renderizar icono nuevo
+            }
+        }
+
+        // 2. Resetear selección
+        function resetFile() {
+            fileInput.value = '';
+            fileInfo.classList.add('hidden');
+            dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            dropText.textContent = "Arrastra tu PDF aquí o haz clic";
+
+            submitBtn.disabled = true;
+            submitBtn.classList.add('bg-slate-300', 'text-slate-500', 'cursor-not-allowed');
+            submitBtn.classList.remove('bg-blue-600', 'text-white', 'hover:bg-blue-700', 'hover:shadow-lg');
+            submitBtn.textContent = "Procesar Documento";
+        }
+
+        // 3. Manejar Envío del Formulario (AJAX FETCH)
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+            e.preventDefault(); // Evitar recarga tradicional
+
+            // Cambiar UI a "Cargando"
+            uploadStep.classList.add('hidden');
+            loadingStep.classList.remove('hidden');
+
+            // Textos aleatorios de carga para UX
+            const loadingTexts = ["Detectando tablas...", "Extrayendo imágenes...", "Generando Word inteligente...", "Comprimiendo archivos..."];
+            let textIdx = 0;
+            const textInterval = setInterval(() => {
+                document.getElementById('loadingText').textContent = loadingTexts[textIdx % loadingTexts.length];
+                textIdx++;
+            }, 2000);
+
+            // Preparar datos
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                // Enviar petición al backend                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             #By Vctor Noguera at VHNGROUP
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    // Recibir el archivo Blob (Binary Large Object)
+                    const blob = await response.blob();
+
+                    // Crear URL temporal para descarga
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+
+                    // Intentar sacar el nombre del archivo del header (opcional) o generar uno
+                    a.download = fileInput.files[0].name.replace('.pdf', '') + "_procesado.zip";
+
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+
+                    // Transición a Éxito
+                    clearInterval(textInterval);
+                    loadingStep.classList.add('hidden');
+                    successStep.classList.remove('hidden');
+                } else {
+                    throw new Error("Error en el servidor");
+                }
+            } catch (error) {
+                clearInterval(textInterval);
+                alert("Ocurrió un error al procesar el archivo. Inténtalo de nuevo.");
+                location.reload();
+            }
+        });
+    </script>
+</body>
+
+</html>

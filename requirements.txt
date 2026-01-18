@@ -1,0 +1,27 @@
+# --- Core Web ---
+flask==3.0.0
+flask-cors==4.0.0
+python-dotenv>=1.0.0
+
+# --- Procesamiento de Datos ---
+pandas>=2.1.0
+openpyxl>=3.1.2
+
+# --- Herramientas PDF (Nativo) ---
+pdfplumber>=0.10.3
+pymupdf>=1.23.8
+pdf2docx>=0.5.6
+python-docx>=1.1.0
+
+# --- Motor de IA para Tablas (GMFT) ---
+gmft>=0.4.0
+# Dependencias de Deep Learning (GMFT las necesita)
+torch
+torchvision
+transformers
+timm
+
+# --- OCR y Visión (Fallback Tesseract) ---
+pytesseract>=0.3.10
+opencv-python>=4.8.0
+Pillow>=10.1.0

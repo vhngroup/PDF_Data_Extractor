@@ -1,0 +1,17 @@
+# --- Entornos Virtuales ---
+.venv/
+venv/
+env/
+
+# --- compilados de Python (Basura) ---
+__pycache__/
+*.pyc
+
+# --- Carpetas de Datos---
+input/
+output/
+
+# --- Secretos ---
+.env
+.vscode/
+.idea/
